@@ -1,10 +1,10 @@
-import os
-import re
-from tkinter import NORMAL, Tk, StringVar, IntVar, DISABLED
-from tkinter.messagebox import Message
-from tkinter import ttk
+"""Tkinter UI for the DLM download manager."""
 
-from ..dlm.dlm import DLM, DownloadModule
+import re
+from tkinter import DISABLED, NORMAL, Tk, ttk
+from tkinter.messagebox import Message
+
+from ..dlm.dlm import DLM
 from ..dlm.progress_tracker import ProgressTracker
 
 
@@ -14,16 +14,18 @@ RE_URL = re.compile(
 
 
 def fmt_size(size: int) -> str:
+    """Format a byte count into a compact human-readable value."""
     suffixes = ["bytes", "KB", "MB", "GB"]
-    for s in suffixes:
+    for suffix in suffixes:
         if size < 1000:
-            return f"{size}{s}"
+            return f"{size}{suffix}"
         size = round(size / 1000)
-
     return f"{size}PB"
 
 
 class Gui:
+    """Simple UI for preparing and starting a multi-threaded download."""
+
     def __init__(self) -> None:
         self.target_file: str | None = None
         self.dlm: DLM | None = None
@@ -35,77 +37,65 @@ class Gui:
             self.root.columnconfigure(n, weight=1)
 
         self.root.title("Progress")
-
-        # required fields to download
         self.url_entry: ttk.Entry | None = None
         self.n_threads_entry: ttk.Entry | None = None
-
-        # bars to keep track of
-        self.progress_comps: list[ttk.Progressbar] = []
-
-        # other things / settings
-        # let the user set custom cookies etc. in .session?
 
         self.build()
 
     def build(self) -> None:
-        top = self.build_top_frame()
-        top.pack(side="top")
-
-        bottom = self.build_bottom_frame()
-        bottom.pack(side="bottom")
+        """Create and place the top and bottom UI sections."""
+        self.build_top_frame().pack(side="top")
+        self.build_bottom_frame().pack(side="bottom")
 
     def build_top_frame(self) -> ttk.Frame:
         frame = ttk.Frame(self.root, name="top")
 
-        def url_paste_cmd() -> None:
+        def paste_url() -> None:
             if self.url_entry is None:
                 return
-            self.url_entry.selection_clear()
+            self.url_entry.delete(0, "end")
             self.url_entry.insert(0, self.root.clipboard_get())
 
-        label = ttk.Label(frame, text="URL to download:")
-        label.grid(row=0, column=0, columnspan=1, sticky="w")
+        ttk.Label(frame, text="URL to download:").grid(row=0, column=0, sticky="w")
 
-        entry = self.url_entry = ttk.Entry(frame, width=50)
-        entry.grid(row=1, column=0, columnspan=5)
+        self.url_entry = ttk.Entry(frame, width=50)
+        self.url_entry.grid(row=1, column=0, columnspan=5)
 
-        paste = ttk.Button(frame, text="Paste", command=url_paste_cmd)
-        paste.grid(row=0, column=4, sticky="e")
+        ttk.Button(frame, text="Paste", command=paste_url).grid(
+            row=0, column=4, sticky="e"
+        )
+        ttk.Separator(frame, orient="vertical").grid(
+            row=0, rowspan=2, column=5, sticky="ns", padx=7
+        )
 
-        sep = ttk.Separator(frame, orient="vertical")
-        sep.grid(row=0, rowspan=2, column=5, sticky="ns", padx=7)
+        ttk.Label(frame, text="# Concurrent Threads:").grid(
+            row=0, column=6, sticky="w"
+        )
+        self.n_threads_entry = ttk.Entry(frame)
+        self.n_threads_entry.grid(row=1, column=6, columnspan=2, sticky="w")
+        self.n_threads_entry.insert(0, "10")
 
-        label = ttk.Label(frame, text="# Concurrent Threads:")
-        label.grid(row=0, column=6, sticky="w")
-
-        entry = self.n_threads_entry = ttk.Entry(frame)
-        entry.grid(row=1, column=6, columnspan=2, sticky="w")
-        entry.insert(0, str(10))
-
-        sep = ttk.Separator(frame, orient="horizontal")
-        sep.grid(row=2, column=0, columnspan=7, sticky="ew", pady=10)
-
+        ttk.Separator(frame, orient="horizontal").grid(
+            row=2, column=0, columnspan=7, sticky="ew", pady=10
+        )
         return frame
 
     def build_bottom_frame(self) -> ttk.Frame:
         frame = ttk.Frame(self.root, name="bottom")
 
-        sep = ttk.Separator(frame, orient="horizontal")
-        sep.grid(row=0, column=0, columnspan=2, sticky="ew", pady=10)
-
-        init_button = ttk.Button(frame, text="Init", command=self.init)
-        init_button.grid(row=1, column=0, sticky="w")
-
-        start_button = self.start_button = ttk.Button(
-            frame, text="Start", command=self.start
+        ttk.Separator(frame, orient="horizontal").grid(
+            row=0, column=0, columnspan=2, sticky="ew", pady=10
         )
-        start_button.config(state=DISABLED)
-        start_button.grid(row=1, column=1)
+        ttk.Button(frame, text="Init", command=self.init).grid(
+            row=1, column=0, sticky="w"
+        )
 
-        other_settings_button = ttk.Button(frame, text="Settings..")
-        other_settings_button.grid(row=1, column=2, sticky="e")
+        self.start_button = ttk.Button(frame, text="Start", command=self.start)
+        self.start_button.config(state=DISABLED)
+        self.start_button.grid(row=1, column=1)
 
+        # Settings are not implemented yet; keep the button visible as a placeholder.
+        ttk.Button(frame, text="Settings..").grid(row=1, column=2, sticky="e")
         return frame
 
     def build_tracker_frame(self) -> ttk.Frame:
@@ -115,73 +105,78 @@ class Gui:
         if self.dlm is None:
             return frame
 
-        for n, m in enumerate(self.dlm.modules):
-            thread_label = ttk.Label(frame, text=m.thread.name)
-            thread_label.grid(row=n, column=0, sticky="w")
-
+        for n, module in enumerate(self.dlm.modules):
+            ttk.Label(frame, text=module.thread.name).grid(
+                row=n, column=0, sticky="w"
+            )
             bar = ttk.Progressbar(frame, maximum=1, mode="determinate", length=300)
             bar.grid(row=n, column=1, sticky="ew")
 
-            size_label = ttk.Label(frame, text=self.fmt_progress_label(m.tracker))
+            size_label = ttk.Label(frame, text=self.fmt_progress_label(module.tracker))
             size_label.grid(row=n, column=2, sticky="e")
-
             self.tracker_components.append((bar, size_label))
+
         return frame
 
     def init(self) -> None:
-        """Start internal dlm and adjust windows"""
+        """Prepare a download and set up its progress bars."""
         if self.url_entry is None or self.n_threads_entry is None:
             return
 
-        url = self.url_entry.get()
-        # if not RE_URL.fullmatch(self.url_entry.get()):
-        #     Message(message="Invalid URL.").show()
-        #     return
+        url = self.url_entry.get().strip()
+        n_threads_str = self.n_threads_entry.get().strip()
+        if not n_threads_str.isdigit() or int(n_threads_str) < 1:
+            Message(message="Enter a positive number of threads.").show()
+            return
 
-        n_threads_str = self.n_threads_entry.get()
-        if not self.n_threads_entry.get().isdigit():
-            Message(message="Invalid number of threads. Please choose a number.")
-        n_threads = int(n_threads_str)
-
-        self.dlm = DLM(
-            n_threads=n_threads,
-            request_session=None,
-            writing_chunk_size_bytes=50,  # for testing
-        )
-
-        self.dlm.prepare_modules(url, target_file="./downloads/idk.png")
+        self.dlm = DLM(n_threads=int(n_threads_str))
+        try:
+            self.target_file = self.dlm.prepare_modules(
+                url, target_file="./downloads/idk.png"
+            )
+        except (requests.RequestException, KeyError, ValueError, RuntimeError) as error:
+            Message(message=f"Could not prepare download: {error}").show()
+            self.dlm = None
+            return
 
         tracker_frame = self.build_tracker_frame()
         tracker_frame.pack(anchor="center")
 
-        if self.start_button is None:
-            return
-        self.start_button.config(state=NORMAL)
+        if self.start_button is not None:
+            self.start_button.config(state=NORMAL)
 
     def start(self) -> None:
-        if self.dlm is None:
+        """Start the prepared download and update progress in the UI."""
+        if self.dlm is None or self.target_file is None:
             return
 
-        self.dlm.start("./downloads/idk.png")
+        try:
+            self.dlm.start(self.target_file)
+        except OSError as error:
+            Message(message=f"Could not start download: {error}").show()
+            return
         self.update_progress_bars(100)
 
-    def fmt_progress_label(self, t: ProgressTracker) -> str:
-        return f"{fmt_size(t.current-t.start)}/{fmt_size(t.end-t.start)} [{round(t.p*100, 2)}%]"
+    def fmt_progress_label(self, tracker: ProgressTracker) -> str:
+        """Return a compact label such as '10MB/20MB [50%]'."""
+        return (
+            f"{fmt_size(tracker.current - tracker.start)}/"
+            f"{fmt_size(tracker.end - tracker.start)} "
+            f"[{round(tracker.p * 100, 2)}%]"
+        )
 
     def update_progress_bars(self, ms: int) -> None:
+        """Refresh progress bars and stop polling once every range is complete."""
         if self.dlm is None:
             return
 
         for n, (bar, label) in enumerate(self.tracker_components):
-            t = self.dlm.modules[n].tracker
-            bar["value"] = t.p
-            label["text"] = self.fmt_progress_label(t)
+            tracker = self.dlm.modules[n].tracker
+            bar["value"] = tracker.p
+            label["text"] = self.fmt_progress_label(tracker)
 
-        if all(m.tracker.done for m in self.dlm.modules):
-            name = self.dlm.modules[0].file.name # type: ignore
-            Message(message=f"Finished downloading. Saved to {name}").show()
+        if all(module.tracker.done for module in self.dlm.modules):
+            Message(message=f"Finished downloading. Saved to {self.target_file}").show()
             return
-        else:
-            print("not done")
 
         self.root.after(ms, self.update_progress_bars, ms)

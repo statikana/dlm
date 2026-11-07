@@ -1,40 +1,33 @@
-import time
-
-from test.test_reprlib import r
-
+"""Helpers for tracking progress across a chunked download."""
 
 UP = "\033[F"
 CLEAR_LINE = "\33[2K\r"
 
 
 class ProgressTracker:
+    """Track how much of a byte range has been downloaded."""
+
     def __init__(self, start: int, end: int):
         self.start = start
         self.current = start
         self.end = end
 
     def update(self, value: int):
-        self.current = value
+        """Set the current position for this download range."""
+        self.current = max(self.start, min(value, self.end))
 
     @property
     def p(self) -> float:
-        return (
-            max(0, min(1, (self.current - self.start) / (self.end - self.start)))
-            if self.end != self.start
-            else 1
-        )
+        if self.end == self.start:
+            return 1.0
+        return max(0.0, min(1.0, (self.current - self.start) / (self.end - self.start)))
 
     def __repr__(self) -> str:
         length = 20
-        p = self.p
-        l = round(length * self.p)
-        return (
-            f"|"
-            + l * "="
-            + (length - l) * " "
-            + "|"
-            + f" [{round(p*100, 2)}%] [{self.current-self.start}/{self.end-self.start}]"
-        )
+        progress = self.p
+        filled = round(length * progress)
+        label = f"[{round(progress * 100, 2)}%] [{self.current - self.start}/{self.end - self.start}]"
+        return "|" + ("=" * filled) + ((length - filled) * " ") + f"| {label}"
 
     @property
     def done(self) -> bool:
@@ -42,6 +35,8 @@ class ProgressTracker:
 
 
 class MultiTracker:
+    """Track multiple progress ranges together."""
+
     def __init__(self, *trackers: ProgressTracker):
         self.trackers = list(trackers)
         self.n = len(self.trackers)
@@ -57,5 +52,5 @@ class MultiTracker:
         self.trackers[n].update(value)
         print(UP * (self.n - n), end="")
         print(CLEAR_LINE, end="")
-        for t in self.trackers[n:]:
-            print(t)
+        for tracker in self.trackers[n:]:
+            print(tracker)
